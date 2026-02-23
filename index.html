@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Snake Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="wrapper">
+    <header>
+      <h1>🐍 SNAKE</h1>
+      <div class="score-board">
+        <div class="score-box">
+          <span class="label">SCORE</span>
+          <span class="value" id="score">0</span>
+        </div>
+        <div class="score-box">
+          <span class="label">BEST</span>
+          <span class="value" id="best">0</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="canvas-wrap">
+      <canvas id="gameCanvas"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="overlay-box">
+          <p id="overlay-title">SNAKE</p>
+          <p id="overlay-sub">Arrow keys or WASD to move</p>
+          <button id="startBtn">START GAME</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="ctrl-row">
+        <button class="ctrl-btn" data-dir="UP">▲</button>
+      </div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn" data-dir="LEFT">◀</button>
+        <button class="ctrl-btn" data-dir="DOWN">▼</button>
+        <button class="ctrl-btn" data-dir="RIGHT">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas       = document.getElementById('gameCanvas');
+    const ctx          = canvas.getContext('2d');
+    const overlay      = document.getElementById('overlay');
+    const startBtn     = document.getElementById('startBtn');
+    const scoreEl      = document.getElementById('score');
+    const bestEl       = document.getElementById('best');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlaySub   = document.getElementById('overlay-sub');
+    const canvasWrap   = document.querySelector('.canvas-wrap');
+    const header       = document.querySelector('header');
+    const controls     = document.querySelector('.controls');
+
+    const GRID = 20;
+    let CELL, gameLoop, running;
+    let snake, dir, nextDir, food, score, best = 0;
+
+    /* ── Responsive resize ── */
+    function resize() {
+      const headerH   = header.getBoundingClientRect().height;
+      const controlsH = controls.getBoundingClientRect().height;
+      const totalGap  = 16 * 3; // 3 gaps between flex children + padding
+      const padding   = 32;
+
+      const maxW = window.innerWidth  - padding;
+      const maxH = window.innerHeight - headerH - controlsH - totalGap - padding;
+      const raw  = Math.min(maxW, maxH);
+
+      // Snap to nearest multiple of GRID for clean pixel cells
+      const size = Math.max(Math.floor(raw / GRID) * GRID, GRID * 10);
+
+      canvas.width  = size;
+      canvas.height = size;
+      canvasWrap.style.width  = size + 'px';
+      canvasWrap.style.height = size + 'px';
+      CELL = size / GRID;
+
+      if (running) draw();
+    }
+
+    /* ── Game ── */
+    function init() {
+      snake   = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+      dir     = { x: 1, y: 0 };
+      nextDir = { x: 1, y: 0 };
+      score   = 0;
+      scoreEl.textContent = '0';
+      placeFood();
+    }
+
+    function placeFood() {
+      let pos;
+      do {
+        pos = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
+      } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+      food = pos;
+    }
+
+    function update() {
+      dir = { ...nextDir };
+      const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+      if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) return endGame();
+      if (snake.some(s => s.x === head.x && s.y === head.y)) return endGame();
+
+      snake.unshift(head);
+      if (head.x === food.x && head.y === food.y) {
+        score++;
+        scoreEl.textContent = score;
+        if (score > best) { best = score; bestEl.textContent = best; }
+        placeFood();
+      } else {
+        snake.pop();
+      }
+      draw();
+    }
+
+    function draw() {
+      const C = CELL;
+      ctx.fillStyle = '#0d0d0d';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Dot grid
+      ctx.fillStyle = '#1a1a2e';
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          ctx.beginPath();
+          ctx.arc(x * C + C / 2, y * C + C / 2, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Food
+      const fx = food.x * C + C / 2, fy = food.y * C + C / 2;
+      const grd = ctx.createRadialGradient(fx, fy, 2, fx, fy, C / 2 - 2);
+      grd.addColorStop(0, '#ff6b6b');
+      grd.addColorStop(1, '#c0392b');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(fx, fy, C / 2 - 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Snake segments
+      snake.forEach((seg, i) => {
+        const x = seg.x * C + 1, y = seg.y * C + 1, sz = C - 2;
+        const r = i === 0 ? Math.min(6, sz / 3) : Math.min(4, sz / 4);
+        if (i === 0) {
+          const hg = ctx.createLinearGradient(x, y, x + sz, y + sz);
+          hg.addColorStop(0, '#00f5a0');
+          hg.addColorStop(1, '#00d9f5');
+          ctx.fillStyle = hg;
+        } else {
+          ctx.fillStyle = `rgba(0,200,150,${1 - (i / snake.length) * 0.5})`;
+        }
+        ctx.beginPath();
+        ctx.roundRect(x, y, sz, sz, r);
+        ctx.fill();
+      });
+    }
+
+    function endGame() {
+      clearInterval(gameLoop);
+      running = false;
+      overlayTitle.textContent = 'GAME OVER';
+      overlaySub.textContent   = `Score: ${score}`;
+      startBtn.textContent     = 'PLAY AGAIN';
+      overlay.classList.remove('hidden');
+    }
+
+    function startGame() {
+      overlay.classList.add('hidden');
+      init();
+      running  = true;
+      gameLoop = setInterval(update, 150);
+      draw();
+    }
+
+    /* ── Input ── */
+    startBtn.addEventListener('click', startGame);
+
+    document.addEventListener('keydown', e => {
+      if (!running) return;
+      const map = {
+        ArrowUp: {x:0,y:-1}, w: {x:0,y:-1},
+        ArrowDown:{x:0,y:1}, s: {x:0,y:1},
+        ArrowLeft:{x:-1,y:0},a: {x:-1,y:0},
+        ArrowRight:{x:1,y:0},d: {x:1,y:0},
+      };
+      const nd = map[e.key];
+      if (!nd) return;
+      if (nd.x === -dir.x && nd.y === -dir.y) return;
+      nextDir = nd;
+      if (e.key.startsWith('Arrow')) e.preventDefault();
+    });
+
+    document.querySelectorAll('.ctrl-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!running) return;
+        const map = { UP:{x:0,y:-1}, DOWN:{x:0,y:1}, LEFT:{x:-1,y:0}, RIGHT:{x:1,y:0} };
+        const nd = map[btn.dataset.dir];
+        if (nd.x === -dir.x && nd.y === -dir.y) return;
+        nextDir = nd;
+      });
+    });
+
+    window.addEventListener('resize', resize);
+    resize(); // initial size
+  </script>
+</body>
+</html>
